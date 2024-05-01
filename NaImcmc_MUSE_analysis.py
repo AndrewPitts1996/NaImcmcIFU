@@ -23,9 +23,7 @@ def setup_script():
     # log maps file path
     log_maps_fil = path + bin_dir + gal_name + gal_sub_dir + 'manga-1-1-MAPS-SQUARE2.0-MILESHC-MASTARHC2-NOISM.fits.gz'
 
-    # Read in table file
-    #table_hdu = fits.open(table_fil)[1].data
-    #_, idxConvertShortToLong = np.unique(np.abs(table.BIN_ID),return_inverse=True)
+
 
     # For continuum-normalization around NaI
     # wavelength fitting range inside of NaI region
@@ -106,6 +104,7 @@ def setup_script():
    # pdb.set_trace()
 
 def run_mcmc(galname, redshift, LSFvel, binid_run, startbinid, endbinid):
+
     start_time1 = time.time()
     path = '/Users/erickaguirre/Desktop/DAP_outputs/'
     bin_dir = 'output0.6_'
@@ -113,9 +112,6 @@ def run_mcmc(galname, redshift, LSFvel, binid_run, startbinid, endbinid):
     outdir = '/Users/erickaguirre/Desktop/NaI_MCMC_output/NGC4030_0.6_err_corr/'
     outfits = outdir+galname+'-binid-'+str(startbinid)+'-'+str(endbinid)+ \
           '-samples-'+ 'run'+str(binid_run) +'.fits'
-    # outpdf = outdir+galname+'-binid-'+str(startbinid)+'-'+\
-    #     str(endbinid)+'-line_triangle.pdf'
-
 
     # For continuum-normalization around NaI
     # wavelength continuum fitting range outside of NaI region
