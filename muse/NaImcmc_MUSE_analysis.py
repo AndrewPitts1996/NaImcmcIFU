@@ -1,6 +1,8 @@
 from __future__ import print_function
 import numpy as np
 import sys
+import os
+import glob
 from astropy.io import fits
 from astropy.table import Table, Column, MaskedColumn
 from linetools.spectra.xspectrum1d import XSpectrum1D
@@ -8,22 +10,58 @@ import model_NaI
 import model_fitter
 import continuum_normalize_NaI
 import time
+from mangadap.config import defaults
+from mangadap.util.parser import DefaultConfig
 from IPython import embed
 
-def setup_script():
+def setup_script(galname,bin_key,binsperrun):
 
-    path = '/Users/erickaguirre/mangadap/examples/'
-    outdir = '/Users/erickaguirre/Desktop/NaImcmcIFU/muse'
+    # mangadap_muse root directory path
+    mangadap_muse_dir = os.path.dirname(os.path.dirname(defaults.dap_data_root()))
+    # main cube directory path
+    main_cube_dir = os.path.join(os.path.dirname(mangadap_muse_dir), 'MUSE_cubes')
+    # MUSE Line Spread Function file path
+    LSF_fil = os.path.join(main_cube_dir, 'LSF-Config_MUSE_WFM')
+    if not os.path.isfile(LSF_fil):
+        raise ValueError(f'LSF-Config_MUSE_WFM does not exist within {main_cube_dir}')
 
-    bin_dir = 'output2.0_'
-    gal_name = 'NGC4030_NOISM_err_corr'
-    gal_sub_dir = '/SQUARE2.0-MILESHC-MASTARHC2-NOISM/1/1/'
-    outfil = outdir + gal_name + '_script2.0_err_corr'
+    # cube directory path
+    cube_dir = os.path.join(main_cube_dir, galname)
+    if not os.path.isdir(cube_dir):
+        raise ValueError(f'{cube_dir} is not a directory within /MUSE_cubes')
+    # check if there is only one config file in the cube directory
+    if len(glob.glob(f"{cube_dir}/*.ini")) > 1:
+        raise ValueError(f'Multiple .ini files within {cube_dir}. {cube_dir} directory must only have '
+                         f'configuration file.')
+    # input configuration file path
+    config_fil = glob.glob(f"{cube_dir}/*.ini")[0]
+    if not os.path.isfile(config_fil):
+        raise ValueError(f'{os.path.basename(config_fil)} does not exist within {cube_dir}')
 
-    # log maps file path
-    log_maps_fil = path + bin_dir + gal_name + gal_sub_dir + 'manga-1-1-MAPS-SQUARE2.0-MILESHC-MASTARHC2-NOISM.fits.gz'
+    # get parameter values from config file
+    cfg = DefaultConfig(config_fil, interpolate=True)
+    plate = cfg.getint('plate',default=None)
+    ifu = cfg.getint('ifu',default=None)
 
+    # output directory path
+    output_root_dir = os.path.join(mangadap_muse_dir, 'outputs')
+    output_gal_dir = os.path.join(output_root_dir, f"{galname}-{bin_key}")
+    if not os.path.isdir(output_gal_dir):
+        raise ValueError(f'{output_gal_dir} is not a directory within {output_root_dir}.')
 
+    # use beta corrected MUSE cube directory
+    output_gal_sub_dir = os.path.join(output_gal_dir, 'BETA-CORR')
+    # key methdos from analysis plan
+    analysisplan_methods = 'MILESHC-MASTARHC2-NOISM'
+    # cube directory
+    output_cube_dir = os.path.join(output_gal_sub_dir, f"{bin_key}-{analysisplan_methods}", str(plate), str(ifu))
+    # paths to the LOGCUBE and MAPS files
+    cube_file_path = os.path.join(output_cube_dir,
+                                  f"manga-{plate}-{ifu}-LOGCUBE-{bin_key}-{analysisplan_methods}.fits")
+
+    # directory where the MCMC script will placed in
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    outfil = f'{script_dir}/{galname}-{bin_key}_script'
 
     # For continuum-normalization around NaI
     # wavelength fitting range inside of NaI region
@@ -36,26 +74,16 @@ def setup_script():
     #redshift = 0.00460
 
     # log maps file
-    hdu_map = fits.open(log_maps_fil)
+    hdu_map = fits.open(cube_file_path)
     # bin ID has multiple layers of the same bin id map so use first one
     binid_map = hdu_map['BINID'].data[0]
-
-    # Read in PPXF map
-    #ppxfHDU = fits.open(ppxfmap_fil)[1].data
-    #ppxf = np.array( [ppxfHDU.V, ppxfHDU.SIGMA, ppxfHDU.H3, ppxfHDU.H4, ppxfHDU.LAMBDA_R] ).T
-    #median_V_stellar = np.nanmedian( ppxf[:,0] )
-    #ppxf[:,0] = ppxf[:,0] - median_V_stellar
-    #binid = np.array( [ppxfHDU.BIN_ID] ).T
-    #binid = binid.flatten()
 
     # Need LSF in km/s
     # This gives LSF in Ang
     # CAUTION: this does not convert air wavelengths
     # to vacuum, or accounts for velocity offset of each bin
     # update: converted LSF wavelength from a air to a vacuum
-    LSFdir = '/Users/erickaguirre/Desktop/SDSU_Research/Getting_used_to_MaNGA_DAP'
-    LSFfil = LSFdir + 'LSF-Config_MUSE_WFM'
-    configLSF = np.genfromtxt(LSFfil, comments='#')
+    configLSF = np.genfromtxt(LSF_fil, comments='#')
     configLSF_wv_air = configLSF[:, 0]
     configLSF_res = configLSF[:, 1]
 
@@ -78,7 +106,7 @@ def setup_script():
 
     # number of total bins from bin ID map
     nbins = np.max(binid_map)
-    binsperrun = 250
+
     # Number of separate "runs"
     nruns = int(nbins / binsperrun)
 
@@ -94,7 +122,7 @@ def setup_script():
         # print(startbinid, endbinid)
 
         f.write('screen -mdS '+jobname+' sh -c "python NaImcmc_MUSE_analysis.py 1 '\
-                +gal_name+' '+redshift_str+' '+LSFvel_str+' '+ str(nn) +' '+\
+                +galname+' '+ bin_key +' '+redshift_str+' '+LSFvel_str+' '+ str(nn) +' '+\
                 str(startbinid)+' '+str(endbinid)+'"\n')
         
     f.close()
@@ -103,15 +131,70 @@ def setup_script():
     # input root, redshift, LSFvel, startbinid, endbinid
    # pdb.set_trace()
 
-def run_mcmc(galname, redshift, LSFvel, binid_run, startbinid, endbinid):
+def run_mcmc(galname, bin_key, redshift, LSFvel, binid_run, startbinid, endbinid):
 
     start_time1 = time.time()
-    path = '/Users/erickaguirre/Desktop/DAP_outputs/'
-    bin_dir = 'output0.6_'
-    gal_sub_dir = '/SQUARE0.6-MILESHC-MASTARHC2-NOISM/1/1/'
-    outdir = '/Users/erickaguirre/Desktop/NaI_MCMC_output/NGC4030_0.6_err_corr/'
-    outfits = outdir+galname+'-binid-'+str(startbinid)+'-'+str(endbinid)+ \
-          '-samples-'+ 'run'+str(binid_run) +'.fits'
+    # mangadap_muse root directory path
+    mangadap_muse_dir = os.path.dirname(os.path.dirname(defaults.dap_data_root()))
+    # main cube directory path
+    main_cube_dir = os.path.join(os.path.dirname(mangadap_muse_dir), 'MUSE_cubes')
+
+    # cube directory path
+    cube_dir = os.path.join(main_cube_dir, galname)
+    if not os.path.isdir(cube_dir):
+        raise ValueError(f'{cube_dir} is not a directory within /MUSE_cubes')
+    # check if there is only one config file in the cube directory
+    if len(glob.glob(f"{cube_dir}/*.ini")) > 1:
+        raise ValueError(f'Multiple .ini files within {cube_dir}. {cube_dir} directory must only have '
+                         f'configuration file.')
+    # input configuration file path
+    config_fil = glob.glob(f"{cube_dir}/*.ini")[0]
+    if not os.path.isfile(config_fil):
+        raise ValueError(f'{os.path.basename(config_fil)} does not exist within {cube_dir}')
+
+    # get parameter values from config file
+    cfg = DefaultConfig(config_fil, interpolate=True)
+    plate = cfg.getint('plate',default=None)
+    ifu = cfg.getint('ifu',default=None)
+
+    # output directory path
+    output_root_dir = os.path.join(mangadap_muse_dir, 'outputs')
+    output_gal_dir = os.path.join(output_root_dir, f"{galname}-{bin_key}")
+    if not os.path.isdir(output_gal_dir):
+        raise ValueError(f'{output_gal_dir} is not a directory within {output_root_dir}.')
+
+    # use beta corrected MUSE cube directory
+    output_gal_sub_dir = os.path.join(output_gal_dir, 'BETA-CORR')
+    # key methdos from analysis plan
+    analysisplan_methods = 'MILESHC-MASTARHC2-NOISM'
+    # cube directory
+    output_cube_dir = os.path.join(output_gal_sub_dir, f"{bin_key}-{analysisplan_methods}", str(plate), str(ifu))
+    # paths to the LOGCUBE and MAPS files
+    cube_file_path = os.path.join(output_cube_dir,
+                                  f"manga-{plate}-{ifu}-LOGCUBE-{bin_key}-{analysisplan_methods}.fits")
+
+    maps_file_path = os.path.join(output_cube_dir,
+                                  f"manga-{plate}-{ifu}-MAPS-{bin_key}-{analysisplan_methods}.fits")
+
+    # main output directory where the MCMC runs will be placed in
+    NaImcmc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),'NaI_MCMC_output')
+    if not os.path.isdir(NaImcmc_dir):
+        os.makedirs(NaImcmc_dir)
+
+    # output mcmc galaxy directory
+    mcmc_gal_dir = os.path.join(NaImcmc_dir,f'{galname}-{bin_key}')
+    if not os.path.isdir(mcmc_gal_dir):
+        os.makedirs(mcmc_gal_dir)
+
+    outfits_file_name = f'{galname}-{bin_key}-binid-{startbinid}-{endbinid}-samples-run-{binid_run}.fits'
+    #path = '/Users/erickaguirre/Desktop/mangadap_muse/outputs/test_cube-SQUARE2.0/BETA-CORR/'
+    #bin_method = 'SQUARE2.0'
+    #plate = 100000
+    #ifu = 1
+    #gal_sub_dir = f'{bin_method}-MILESHC-MASTARHC2-NOISM/{plate}/{ifu}/'
+    #outdir = f'/Users/erickaguirre/Desktop/NaImcmcIFU/muse/NaI_MCMC_output/{galname}-{bin_method}/'
+    # outfits = outdir+galname+'-binid-'+str(startbinid)+'-'+str(endbinid)+ \
+    #       '-samples-'+ 'run'+str(binid_run) +'.fits'
 
     # For continuum-normalization around NaI
     # wavelength continuum fitting range outside of NaI region
@@ -123,12 +206,13 @@ def run_mcmc(galname, redshift, LSFvel, binid_run, startbinid, endbinid):
     c = 2.998e5
 
     # log cube model and data file path
-    log_cube_fil = path + bin_dir + galname + gal_sub_dir + 'manga-1-1-LOGCUBE-SQUARE0.6-MILESHC-MASTARHC2-NOISM.fits.gz'
+    #log_cube_fil = path + bin_method + galname + gal_sub_dir + 'manga-1-1-LOGCUBE-SQUARE0.6-MILESHC-MASTARHC2-NOISM.fits'
+    #log_cube_fil = path + gal_sub_dir + f'manga-{plate}-{ifu}-LOGCUBE-{bin_method}-MILESHC-MASTARHC2-NOISM.fits'
     # log maps file path
-    log_maps_fil = path + bin_dir + galname + gal_sub_dir + 'manga-1-1-MAPS-SQUARE0.6-MILESHC-MASTARHC2-NOISM.fits.gz'
+    #log_maps_fil = path + gal_sub_dir + f'manga-{plate}-{ifu}-MAPS-{bin_method}-MILESHC-MASTARHC2-NOISM.fits'
 
     # log maps file
-    hdu_map = fits.open(log_maps_fil)
+    hdu_map = fits.open(maps_file_path)
     # bin ID has multiple layers of the same bin id map so use first one
     binid_map = hdu_map['BINID'].data[0]
 
@@ -137,7 +221,7 @@ def run_mcmc(galname, redshift, LSFvel, binid_run, startbinid, endbinid):
 
     # Read in binned spectra
     # extract cube data  spectrum
-    hdu_cube = fits.open(log_cube_fil)
+    hdu_cube = fits.open(cube_file_path)
     spec = hdu_cube['FLUX'].data
     # extract error spectrum from cube
     ivar = hdu_cube['IVAR'].data
@@ -224,7 +308,7 @@ def run_mcmc(galname, redshift, LSFvel, binid_run, startbinid, endbinid):
         
     t = Table([sv_binnumber, sv_samples, sv_percentiles, sv_velocities],\
               names=('bin', 'samples', 'percentiles', 'velocities'))
-    fits.writeto(outfits, np.array(t), overwrite=True)
+    fits.writeto(os.path.join(output_gal_dir,outfits_file_name), np.array(t), overwrite=True)
     end_time1 = time.time()
     print('Total time elapsed {:.2f} hours'.format((end_time1 - start_time1) / 3600))
         
@@ -233,19 +317,26 @@ def main():
     flg = int(sys.argv[1])
 
     if (flg==0):
-        setup_script()
+        # galaxy name
+        gal = sys.argv[2]
+        # binning method
+        bin_key = sys.argv[3]
+        # number of bins per run
+        binsperrun = int(sys.argv[4])
+        setup_script(gal,bin_key,binsperrun)
 
     if (flg==1):
 
         #pdb.set_trace()
         gal = sys.argv[2]
-        redshift = float(sys.argv[3])
-        LSFvel = float(sys.argv[4])
-        binid_run = int(sys.argv[5])
-        startbin = int(sys.argv[6])
-        endbin = int(sys.argv[7])
+        bin_key = sys.argv[3]
+        redshift = float(sys.argv[4])
+        LSFvel = float(sys.argv[5])
+        binid_run = int(sys.argv[6])
+        startbin = int(sys.argv[7])
+        endbin = int(sys.argv[8])
 
-        run_mcmc(galname=gal, redshift=redshift, LSFvel=LSFvel,binid_run=binid_run,
+        run_mcmc(galname=gal,bin_key=bin_key, redshift=redshift, LSFvel=LSFvel,binid_run=binid_run,
                  startbinid=startbin, endbinid=endbin)
     
 main()
