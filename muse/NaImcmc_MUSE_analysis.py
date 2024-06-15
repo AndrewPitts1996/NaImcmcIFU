@@ -306,7 +306,7 @@ def run_mcmc(galname, bin_key, redshift, LSFvel, binid_run, startbinid, endbinid
         end_time2 = time.time()
         print('Time elapsed for this bin {:.2f} minutes'.format( (end_time2 - start_time2)/60 ) )
         
-    t = Table([sv_binnumber, sv_samples, sv_percentiles, sv_velocities],\
+    t = Table([sv_binnumber, sv_samples, sv_percentiles, sv_velocities],
               names=('bin', 'samples', 'percentiles', 'velocities'))
     fits.writeto(os.path.join(output_gal_dir,outfits_file_name), np.array(t), overwrite=True)
     end_time1 = time.time()
