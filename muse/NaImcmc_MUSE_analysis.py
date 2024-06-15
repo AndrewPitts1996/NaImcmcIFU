@@ -308,7 +308,7 @@ def run_mcmc(galname, bin_key, redshift, LSFvel, binid_run, startbinid, endbinid
         
     t = Table([sv_binnumber, sv_samples, sv_percentiles, sv_velocities],
               names=('bin', 'samples', 'percentiles', 'velocities'))
-    fits.writeto(os.path.join(output_gal_dir,outfits_file_name), np.array(t), overwrite=True)
+    fits.writeto(os.path.join(mcmc_gal_dir,outfits_file_name), np.array(t), overwrite=True)
     end_time1 = time.time()
     print('Total time elapsed {:.2f} hours'.format((end_time1 - start_time1) / 3600))
         
