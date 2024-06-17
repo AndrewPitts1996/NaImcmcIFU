@@ -14,8 +14,7 @@ from mangadap.config import defaults
 from mangadap.util.parser import DefaultConfig
 from IPython import embed
 
-def setup_script(galname,bin_key,binsperrun):
-
+def setup_script(galname, bin_key, beta_corr, binsperrun):
     # mangadap_muse root directory path
     mangadap_muse_dir = os.path.dirname(os.path.dirname(defaults.dap_data_root()))
     # main cube directory path
@@ -40,8 +39,8 @@ def setup_script(galname,bin_key,binsperrun):
 
     # get parameter values from config file
     cfg = DefaultConfig(config_fil, interpolate=True)
-    plate = cfg.getint('plate',default=None)
-    ifu = cfg.getint('ifu',default=None)
+    plate = cfg.getint('plate', default=None)
+    ifu = cfg.getint('ifu', default=None)
 
     # output directory path
     output_root_dir = os.path.join(mangadap_muse_dir, 'outputs')
@@ -49,8 +48,16 @@ def setup_script(galname,bin_key,binsperrun):
     if not os.path.isdir(output_gal_dir):
         raise ValueError(f'{output_gal_dir} is not a directory within {output_root_dir}.')
 
-    # use beta corrected MUSE cube directory
-    output_gal_sub_dir = os.path.join(output_gal_dir, 'BETA-CORR')
+    if beta_corr:
+        # use beta corrected MUSE cube directory
+        beta_dirname = 'BETA-CORR'
+        output_gal_sub_dir = os.path.join(output_gal_dir, beta_dirname)
+
+    else:
+        # use uncorrected MUSE cube directory
+        beta_dirname = 'NO-CORR'
+        output_gal_sub_dir = os.path.join(output_gal_dir, beta_dirname)
+
     # key methdos from analysis plan
     analysisplan_methods = 'MILESHC-MASTARHC2-NOISM'
     # cube directory
@@ -61,7 +68,7 @@ def setup_script(galname,bin_key,binsperrun):
 
     # directory where the MCMC script will placed in
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    outfil = f'{script_dir}/{galname}-{bin_key}_script'
+    outfil = f'{script_dir}/{galname}-{bin_key}-{beta_dirname}-script'
 
     # For continuum-normalization around NaI
     # wavelength fitting range inside of NaI region
@@ -71,7 +78,7 @@ def setup_script(galname,bin_key,binsperrun):
     # NGC 4030 redshift's
     redshift = 0.00489
     # NGC 1042 redshift's
-    #redshift = 0.00460
+    # redshift = 0.00460
 
     # log maps file
     hdu_map = fits.open(cube_file_path)
@@ -93,14 +100,14 @@ def setup_script(galname,bin_key,binsperrun):
     xspec.airtovac()
     configLSF_wv_vac = xspec.wavelength.value
     # convert LSF wavelength to the restframe using galaxy's redshift
-    configLSF_restwv = configLSF_wv_vac/ (1.0+redshift)
+    configLSF_restwv = configLSF_wv_vac / (1.0 + redshift)
     whLSF = np.where((configLSF_restwv > fitlim[0]) & (configLSF_restwv < fitlim[1]))
     median_LSFAng = np.median(configLSF_res[whLSF[0]])
     median_LSFvel = c * median_LSFAng / np.median(configLSF_wv_vac[whLSF[0]])
 
     LSFvel_str = "{:.2f}".format(median_LSFvel)
     redshift_str = "{:.6f}".format(redshift)
-    
+
     f = open(outfil, "w")
     f.write("#!/bin/sh\n")
 
@@ -110,29 +117,26 @@ def setup_script(galname,bin_key,binsperrun):
     # Number of separate "runs"
     nruns = int(nbins / binsperrun)
 
-    for nn in range(nruns+1):
+    for nn in range(nruns + 1):
 
-        startbinid = nn*binsperrun
-        endbinid = (nn+1)*binsperrun
+        startbinid = nn * binsperrun
+        endbinid = (nn + 1) * binsperrun
 
-        if(endbinid > nbins):
+        if (endbinid > nbins):
             endbinid = nbins
 
         jobname = 'NaImcmc' + '_bin_' + str(startbinid) + '_' + str(endbinid) + '_run' + str(nn)
-        # print(startbinid, endbinid)
 
-        f.write('screen -mdS '+jobname+' sh -c "python NaImcmc_MUSE_analysis.py 1 '\
-                +galname+' '+ bin_key +' '+redshift_str+' '+LSFvel_str+' '+ str(nn) +' '+\
-                str(startbinid)+' '+str(endbinid)+'"\n')
-        
+        f.write('screen -mdS ' + jobname + ' sh -c "python NaImcmc_MUSE_analysis.py 1 ' +
+                galname + ' ' + bin_key + ' ' + str(beta_corr) + ' ' +
+                redshift_str + ' ' + LSFvel_str + ' ' + str(nn) + ' ' +
+                str(startbinid) + ' ' + str(endbinid) + '"\n')
+
     f.close()
-    
     # Set up script that lists
     # input root, redshift, LSFvel, startbinid, endbinid
-   # pdb.set_trace()
 
-def run_mcmc(galname, bin_key, redshift, LSFvel, binid_run, startbinid, endbinid):
-
+def run_mcmc(galname, bin_key, beta_corr,redshift, LSFvel, binid_run, startbinid, endbinid):
     start_time1 = time.time()
     # mangadap_muse root directory path
     mangadap_muse_dir = os.path.dirname(os.path.dirname(defaults.dap_data_root()))
@@ -154,8 +158,8 @@ def run_mcmc(galname, bin_key, redshift, LSFvel, binid_run, startbinid, endbinid
 
     # get parameter values from config file
     cfg = DefaultConfig(config_fil, interpolate=True)
-    plate = cfg.getint('plate',default=None)
-    ifu = cfg.getint('ifu',default=None)
+    plate = cfg.getint('plate', default=None)
+    ifu = cfg.getint('ifu', default=None)
 
     # output directory path
     output_root_dir = os.path.join(mangadap_muse_dir, 'outputs')
@@ -163,8 +167,15 @@ def run_mcmc(galname, bin_key, redshift, LSFvel, binid_run, startbinid, endbinid
     if not os.path.isdir(output_gal_dir):
         raise ValueError(f'{output_gal_dir} is not a directory within {output_root_dir}.')
 
-    # use beta corrected MUSE cube directory
-    output_gal_sub_dir = os.path.join(output_gal_dir, 'BETA-CORR')
+    if beta_corr:
+        # use beta corrected MUSE cube directory
+        beta_dirname = 'BETA-CORR'
+        output_gal_sub_dir = os.path.join(output_gal_dir, beta_dirname)
+    else:
+        # use uncorrected MUSE cube directory
+        beta_dirname = 'NO-CORR'
+        output_gal_sub_dir = os.path.join(output_gal_dir, beta_dirname)
+
     # key methdos from analysis plan
     analysisplan_methods = 'MILESHC-MASTARHC2-NOISM'
     # cube directory
@@ -177,24 +188,16 @@ def run_mcmc(galname, bin_key, redshift, LSFvel, binid_run, startbinid, endbinid
                                   f"manga-{plate}-{ifu}-MAPS-{bin_key}-{analysisplan_methods}.fits")
 
     # main output directory where the MCMC runs will be placed in
-    NaImcmc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),'NaI_MCMC_output')
+    NaImcmc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'NaI_MCMC_output')
     if not os.path.isdir(NaImcmc_dir):
         os.makedirs(NaImcmc_dir)
 
     # output mcmc galaxy directory
-    mcmc_gal_dir = os.path.join(NaImcmc_dir,f'{galname}-{bin_key}')
+    mcmc_gal_dir = os.path.join(NaImcmc_dir,f'{galname}-{bin_key}', beta_dirname)
     if not os.path.isdir(mcmc_gal_dir):
         os.makedirs(mcmc_gal_dir)
 
     outfits_file_name = f'{galname}-{bin_key}-binid-{startbinid}-{endbinid}-samples-run-{binid_run}.fits'
-    #path = '/Users/erickaguirre/Desktop/mangadap_muse/outputs/test_cube-SQUARE2.0/BETA-CORR/'
-    #bin_method = 'SQUARE2.0'
-    #plate = 100000
-    #ifu = 1
-    #gal_sub_dir = f'{bin_method}-MILESHC-MASTARHC2-NOISM/{plate}/{ifu}/'
-    #outdir = f'/Users/erickaguirre/Desktop/NaImcmcIFU/muse/NaI_MCMC_output/{galname}-{bin_method}/'
-    # outfits = outdir+galname+'-binid-'+str(startbinid)+'-'+str(endbinid)+ \
-    #       '-samples-'+ 'run'+str(binid_run) +'.fits'
 
     # For continuum-normalization around NaI
     # wavelength continuum fitting range outside of NaI region
@@ -204,12 +207,6 @@ def run_mcmc(galname, bin_key, redshift, LSFvel, binid_run, startbinid, endbinid
     fitlim = [5880.0, 5910.0]
     # speed of light in km/s
     c = 2.998e5
-
-    # log cube model and data file path
-    #log_cube_fil = path + bin_method + galname + gal_sub_dir + 'manga-1-1-LOGCUBE-SQUARE0.6-MILESHC-MASTARHC2-NOISM.fits'
-    #log_cube_fil = path + gal_sub_dir + f'manga-{plate}-{ifu}-LOGCUBE-{bin_method}-MILESHC-MASTARHC2-NOISM.fits'
-    # log maps file path
-    #log_maps_fil = path + gal_sub_dir + f'manga-{plate}-{ifu}-MAPS-{bin_method}-MILESHC-MASTARHC2-NOISM.fits'
 
     # log maps file
     hdu_map = fits.open(maps_file_path)
@@ -237,7 +234,7 @@ def run_mcmc(galname, bin_key, redshift, LSFvel, binid_run, startbinid, endbinid
     sv_velocities = []
 
     # Set up array with all relevant binids
-    fitbins = np.arange(startbinid,endbinid+1)
+    fitbins = np.arange(startbinid, endbinid + 1)
 
     for qq in fitbins:
         start_time2 = time.time()
@@ -252,16 +249,13 @@ def run_mcmc(galname, bin_key, redshift, LSFvel, binid_run, startbinid, endbinid
         mod_bin = np.ma.array(mod[:, ind][:, 0])
 
         # Determine bin redshift: cz in km/s = tstellar_kin[*,0]
-        #bin_z = (cz + stellar_vfield[qq]) / sol
-        #cosmo_z = cz / sol
+        # bin_z = (cz + stellar_vfield[qq]) / sol
+        # cosmo_z = cz / sol
         bin_z = redshift + ((1 + redshift) * (binvel / c))
         restwave = obswave / (1.0 + bin_z)
 
-        #ndata = continuum_normalize_NaI.norm(restwave, mod_bin, err_bin, blim, rlim, FIT_FLG=0)
-        #ndata = continuum_normalize_NaI.norm(restwave, mod_bin, err_bin, blim, rlim, FIT_FLG=0)
-        #ndata = continuum_normalize_NaI.norm(restwave, mod_bin, err_corr_bin, blim, rlim, FIT_FLG=0)
-        # gas flux (total flux / continuum)
-        gas_ndata = continuum_normalize_NaI.smod_norm(restwave,flux_bin,err_bin,mod_bin,blim,rlim)
+        # gas flux = (total flux / continuum)
+        gas_ndata = continuum_normalize_NaI.smod_norm(restwave, flux_bin, err_bin, mod_bin, blim, rlim)
         print("""Beginning fit for bin {0} """.format(qq))
 
         # Cut out NaI
@@ -271,17 +265,17 @@ def run_mcmc(galname, bin_key, redshift, LSFvel, binid_run, startbinid, endbinid
         err_NaI = gas_ndata['nerr'][select].astype('float64')
         sres_NaI = LSFvel
 
-        data = {'wave':restwave_NaI, 'flux':flux_NaI, 'err':err_NaI, 'velres':sres_NaI}
-        #pdb.set_trace()
+        data = {'wave': restwave_NaI, 'flux': flux_NaI, 'err': err_NaI, 'velres': sres_NaI}
+        # pdb.set_trace()
 
         # check for bad data being masked
         if (data['flux'].mask.all() == True) | (data['err'].mask.all() == True):
             sv_binnumber.append(binid_map[ind][0])
-            sv_samples.append(np.zeros((100,1100,4)))
-            sv_percentiles.append(np.zeros((4,3)))
+            sv_samples.append(np.zeros((100, 1100, 4)))
+            sv_percentiles.append(np.zeros((4, 3)))
             sv_velocities.append(-999)
             continue
-        
+
         # Guess good model parameters
         lamred = 5897.5581
         logN = 14.5
@@ -292,51 +286,62 @@ def run_mcmc(galname, bin_key, redshift, LSFvel, binid_run, startbinid, endbinid
         datfit = model_fitter.model_fitter(data, theta_guess)
         # Run the MCMC
         datfit.mcmc()
-        #transinfo = model_NaI.transitions()
+        # transinfo = model_NaI.transitions()
 
         # get gas velocity from model lambda and rest lambda
         lamred_mcmc, logN_mcmc, bD_mcmc, Cf_mcmc = datfit.theta_percentiles
         lamrest = 5897.5581
-        velocity = ( (lamred_mcmc[0]/lamrest) - 1 ) * c
+        velocity = ((lamred_mcmc[0] / lamrest) - 1) * c
 
         sv_binnumber.append(binid_map[ind][0])
         sv_samples.append(datfit.samples)
         sv_percentiles.append(datfit.theta_percentiles)
         sv_velocities.append(velocity)
         end_time2 = time.time()
-        print('Time elapsed for this bin {:.2f} minutes'.format( (end_time2 - start_time2)/60 ) )
-        
+        print('Time elapsed for this bin {:.2f} minutes'.format((end_time2 - start_time2) / 60))
+
     t = Table([sv_binnumber, sv_samples, sv_percentiles, sv_velocities],
               names=('bin', 'samples', 'percentiles', 'velocities'))
-    fits.writeto(os.path.join(mcmc_gal_dir,outfits_file_name), np.array(t), overwrite=True)
+    fits.writeto(os.path.join(mcmc_gal_dir, outfits_file_name), np.array(t), overwrite=True)
     end_time1 = time.time()
     print('Total time elapsed {:.2f} hours'.format((end_time1 - start_time1) / 3600))
-        
-def main():
 
+
+def main():
     flg = int(sys.argv[1])
 
-    if (flg==0):
+    if (flg == 0):
         # galaxy name
         gal = sys.argv[2]
         # binning method
         bin_key = sys.argv[3]
+        # correlation correction flag
+        if sys.argv[4] == 'True':
+            beta_corr = True
+        elif sys.argv[4] == 'False':
+            beta_corr = False
+        else:
+            raise ValueError('correlation correction flag must be either True or False')
         # number of bins per run
-        binsperrun = int(sys.argv[4])
-        setup_script(gal,bin_key,binsperrun)
+        binsperrun = int(sys.argv[5])
+        setup_script(gal, bin_key, beta_corr, binsperrun)
 
-    if (flg==1):
-
-        #pdb.set_trace()
+    if (flg == 1):
+        # pdb.set_trace()
         gal = sys.argv[2]
         bin_key = sys.argv[3]
-        redshift = float(sys.argv[4])
-        LSFvel = float(sys.argv[5])
-        binid_run = int(sys.argv[6])
-        startbin = int(sys.argv[7])
-        endbin = int(sys.argv[8])
+        if sys.argv[4] == 'True':
+            beta_corr = True
+        else:
+            beta_corr = False
+        redshift = float(sys.argv[5])
+        LSFvel = float(sys.argv[6])
+        binid_run = int(sys.argv[7])
+        startbin = int(sys.argv[8])
+        endbin = int(sys.argv[9])
 
-        run_mcmc(galname=gal,bin_key=bin_key, redshift=redshift, LSFvel=LSFvel,binid_run=binid_run,
+        run_mcmc(galname=gal, bin_key=bin_key, beta_corr=beta_corr, redshift=redshift,
+                 LSFvel=LSFvel, binid_run=binid_run,
                  startbinid=startbin, endbinid=endbin)
-    
+
 main()
