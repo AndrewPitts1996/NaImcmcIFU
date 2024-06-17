@@ -80,7 +80,6 @@ class model_fitter:
 
         # Clear and run the production chain.
         print("Running MCMC...")
-        embed()
         sampler.run_mcmc(pos, self.nsteps, rstate0=np.random.get_state())
         print("Done.")
 
