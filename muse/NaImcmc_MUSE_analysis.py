@@ -141,7 +141,7 @@ def run_mcmc(galname, bin_key, beta_corr,redshift, LSFvel, binid_run, startbinid
     # mangadap_muse root directory path
     mangadap_muse_dir = os.path.dirname(os.path.dirname(defaults.dap_data_root()))
     # main cube directory path
-    main_cube_dir = os.path.join(os.path.dirname(mangadap_muse_dir), 'MUSE_cubes')
+    main_cube_dir = os.path.join(mangadap_muse_dir, 'MUSE_cubes')
 
     # cube directory path
     cube_dir = os.path.join(main_cube_dir, galname)
