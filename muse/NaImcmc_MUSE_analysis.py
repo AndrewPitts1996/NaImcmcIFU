@@ -23,7 +23,7 @@ def setup_script(galname, bin_key, beta_corr, binsperrun):
     LSF_fil = os.path.join(main_cube_dir, 'LSF-Config_MUSE_WFM')
     if not os.path.isfile(LSF_fil):
         raise ValueError(f'LSF-Config_MUSE_WFM does not exist within {main_cube_dir}')
-    embed()
+
     # cube directory path
     cube_dir = os.path.join(main_cube_dir, galname)
     if not os.path.isdir(cube_dir):
